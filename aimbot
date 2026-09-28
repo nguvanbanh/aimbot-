@@ -1,0 +1,180 @@
+-- ===== [ NHÁNH 1: KHỞI TẠO DỊCH VỤ VÀ BIẾN TOÀN CỤC ] =====
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+-- Trạng thái Aimbot
+getgenv().AimbotSettings = {
+    Enabled = false,
+    Prediction = 0.05,
+    PredictionEnabled = true,
+    Smoothness = 1,
+    FOVRadius = 136,
+    FOVVisible = true,
+    AlwaysLock = false,
+    CheckWalls = true,
+    CheckDead = true,
+    TeamCheck = false,
+    AimMode = "CFrame", -- Hoặc "Mouse"
+    FOVColor = Color3.fromRGB(255, 255, 255)
+}
+
+-- ===== [ NHÁNH 2: TẠO GIAO DIỆN MENU AIMBOT (CTGV-THW) ] =====
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "CtgvThwAimbotMenu"
+ScreenGui.Parent = game:GetService("CoreGui")
+ScreenGui.ResetOnSpawn = false
+
+-- Nút Bật/Tắt Menu chính (AIM OFF / AIM ON)
+local MainToggleButton = Instance.new("TextButton")
+MainToggleButton.Name = "MainToggleButton"
+MainToggleButton.Parent = ScreenGui
+MainToggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+MainToggleButton.Position = UDim2.new(0.85, 0, 0.1, 0)
+MainToggleButton.Size = UDim2.new(0, 100, 0, 45)
+MainToggleButton.Font = Enum.Font.SourceSansBold
+MainToggleButton.Text = "AIM\nOFF"
+MainToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+MainToggleButton.TextSize = 16
+
+-- Khung Menu Chính
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+MainFrame.BorderColor3 = Color3.fromRGB(80, 80, 80)
+MainFrame.Position = UDim2.new(0.3, 0, 0.2, 0)
+MainFrame.Size = UDim2.new(0, 400, 0, 350)
+MainFrame.Visible = true
+
+-- Tiêu đề Menu
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Parent = MainFrame
+TitleLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+TitleLabel.Size = UDim2.new(1, 0, 0, 35)
+TitleLabel.Font = Enum.Font.SourceSansBold
+TitleLabel.Text = " Menu AIMBOT (Ctgv-thw)"
+TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleLabel.TextSize = 16
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Vòng tròn hiển thị FOV
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Visible = true
+FOVCircle.Thickness = 1
+FOVCircle.NumSides = 64
+FOVCircle.Radius = AimbotSettings.FOVRadius
+FOVCircle.Filled = false
+FOVCircle.Color = Color3.fromRGB(255, 255, 255)
+FOVCircle.Transparency = 1
+
+-- ===== [ NHÁNH 3: XỬ LÝ LOGIC TÌM MỤC TIÊU VÀ AIMBOT ] =====
+local lockedTarget = nil
+
+local function getClosestPlayerInFOV()
+    local closestTarget = nil
+    local shortestDistance = AimbotSettings.FOVRadius
+
+    local mouseLocation = UserInputService:GetMouseLocation()
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            if AimbotSettings.TeamCheck and player.Team == LocalPlayer.Team then
+                continue
+            end
+
+            local character = player.Character
+            if character and character:FindFirstChild("HumanoidRootPart") and character:FindFirstChild("Humanoid") then
+                local humanoid = character.Humanoid
+                if AimbotSettings.CheckDead and humanoid.Health <= 0 then
+                    continue
+                end
+
+                local hrp = character.HumanoidRootPart
+                local screenPoint, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+
+                if onScreen then
+                    local distance = (Vector2.new(screenPoint.X, screenPoint.Y) - mouseLocation).Magnitude
+                    if distance < shortestDistance then
+                        if AimbotSettings.CheckWalls then
+                            local origin = Camera.CFrame.Position
+                            local raycastParams = RaycastParams.new()
+                            raycastParams.FilterDescendantsInstances = {LocalPlayer.Character, character}
+                            raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+                            
+                            local result = Workspace:Raycast(origin, hrp.Position - origin, raycastParams)
+                            if not result then
+                                closestTarget = character
+                                shortestDistance = distance
+                            end
+                        else
+                            closestTarget = character
+                            shortestDistance = distance
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return closestTarget
+end
+
+-- Vòng lặp cập nhật Aimbot liên tục
+RunService.RenderStepped:Connect(function()
+    -- Cập nhật hiển thị FOV
+    FOVCircle.Visible = AimbotSettings.FOVVisible
+    FOVCircle.Radius = AimbotSettings.FOVRadius
+    FOVCircle.Position = UserInputService:GetMouseLocation()
+    FOVCircle.Color = AimbotSettings.FOVColor
+
+    if not AimbotSettings.Enabled then
+        lockedTarget = nil
+        return
+    end
+
+    -- Xử lý khóa mục tiêu
+    if AimbotSettings.AlwaysLock or not lockedTarget or not lockedTarget.Parent or lockedTarget.Humanoid.Health <= 0 then
+        lockedTarget = getClosestPlayerInFOV()
+    end
+
+    if lockedTarget and lockedTarget:FindFirstChild("HumanoidRootPart") then
+        local hrp = lockedTarget.HumanoidRootPart
+        local targetPosition = hrp.Position
+
+        -- Tính năng Đoán Hướng (Prediction)
+        if AimbotSettings.PredictionEnabled then
+            targetPosition = targetPosition + (hrp.Velocity * AimbotSettings.Prediction)
+        end
+
+        if AimbotSettings.AimMode == "CFrame" then
+            local currentCFrame = Camera.CFrame
+            local targetCFrame = CFrame.new(currentCFrame.Position, targetPosition)
+            Camera.CFrame = currentCFrame:Lerp(targetCFrame, 1 / math.max(AimbotSettings.Smoothness, 1))
+        elseif AimbotSettings.AimMode == "Mouse" then
+            local screenPoint = Camera:WorldToViewportPoint(targetPosition)
+            local mouseLocation = UserInputService:GetMouseLocation()
+            local moveX = (screenPoint.X - mouseLocation.X) / math.max(AimbotSettings.Smoothness, 1)
+            local moveY = (screenPoint.Y - mouseLocation.Y) / math.max(AimbotSettings.Smoothness, 1)
+            mousemoverel(moveX, moveY)
+        end
+    end
+end)
+
+-- ===== [ NHÁNH 4: SỰ KIỆN TƯƠNG TÁC GIAO DIỆN ]--
+MainToggleButton.MouseButton1Click:Connect(function()
+    AimbotSettings.Enabled = not AimbotSettings.Enabled
+    if AimbotSettings.Enabled then
+        MainToggleButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+        MainToggleButton.Text = "AIM\nON"
+    else
+        MainToggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        MainToggleButton.Text = "AIM\nOFF"
+    end
+end)
+
+print("Script Aimbot (Ctgv-thw) đã được tải thành công hoàn toàn 100%!")
